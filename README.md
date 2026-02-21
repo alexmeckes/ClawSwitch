@@ -7,19 +7,19 @@ You call one endpoint with `model: "claw-auto-cheap"`. ClawSwitch classifies you
 **Everything runs locally.** Your API keys stay on your machine. Your prompts go straight from your machine to the provider — OpenAI, Anthropic, Mistral, etc. — with nothing in between that you don't control.
 
 ```
-OpenClaw / Cursor / any client
-            │
-            ▼
-     ClawSwitch (:4000)          ← classifies request, picks cheapest model
-            │
-            ▼
-     Any-LLM gateway (:8000)     ← forwards to the right provider API
-            │
-       ┌────┼────┬────────┐
-       ▼    ▼    ▼        ▼
-    OpenAI  Anthropic  Gemini  Mistral ...
+OpenClaw
+    │
+    ▼
+ClawSwitch (:4000)          ← classifies request, picks cheapest model
+    │
+    ▼
+Any-LLM gateway (:8000)     ← forwards to the right provider API
+    │
+  ┌─┼──┬────────┐
+  ▼ ▼  ▼        ▼
+OpenAI  Anthropic  Gemini  Mistral ...
 
-    └──── all on your machine ────┘
+└── all on your machine ──┘
 ```
 
 ## Install
