@@ -35,6 +35,19 @@ env_get() {
   echo "${line#*=}"
 }
 
+discover_first_alias() {
+  local models_file="$1"
+  awk '
+    /^models:/ { in_models=1; next }
+    in_models && $0 ~ /^  [A-Za-z0-9._-]+:$/ {
+      alias=$1
+      sub(":", "", alias)
+      print alias
+      exit
+    }
+  ' "${models_file}"
+}
+
 env_upsert() {
   local key="$1"
   local value="$2"
@@ -95,7 +108,7 @@ if [ -z "${router_key}" ] && [ "${GENERATE_ROUTER_KEY:-1}" = "1" ]; then
   env_upsert "ROUTER_SHARED_KEY" "${router_key}" ".env"
 fi
 
-echo "[3/6] Checking provider keys..."
+echo "[3/7] Checking provider keys..."
 has_provider_key=0
 for key_var in OPENAI_API_KEY ANTHROPIC_API_KEY MISTRAL_API_KEY GEMINI_API_KEY; do
   value="$(env_get "${key_var}" ".env")"
@@ -114,10 +127,10 @@ if [ "${has_provider_key}" -eq 0 ]; then
   exit 1
 fi
 
-echo "[4/6] Starting stack..."
+echo "[4/7] Starting stack..."
 docker compose up -d --build
 
-echo "[5/6] Waiting for health checks..."
+echo "[5/7] Waiting for health checks..."
 deadline=$((SECONDS + 120))
 while [ "${SECONDS}" -lt "${deadline}" ]; do
   if curl -fsS "http://127.0.0.1:4000/health" >/dev/null 2>&1; then
@@ -133,6 +146,53 @@ if ! curl -fsS "http://127.0.0.1:4000/health" >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "[6/6] Ready."
+if [ "${SKIP_CHAT_SMOKE_TEST:-0}" != "1" ]; then
+  echo "[6/7] Running chat smoke test..."
+  router_key="$(env_get "ROUTER_SHARED_KEY" ".env")"
+  default_model="$(env_get "OPENCLAW_MODEL" ".env")"
+  if [ -z "${default_model}" ] && [ -f "router/models.yml" ]; then
+    default_model="$(discover_first_alias "router/models.yml")"
+  fi
+  if [ -z "${default_model}" ]; then
+    default_model="claw-auto-cheap"
+  fi
+
+  smoke_payload="$(cat <<EOF
+{"model":"${default_model}","messages":[{"role":"user","content":"Reply with exactly: OK"}],"max_tokens":8}
+EOF
+)"
+
+  smoke_output_file="$(mktemp)"
+  if [ -n "${router_key}" ]; then
+    smoke_status="$(
+      curl -sS -o "${smoke_output_file}" -w "%{http_code}" "http://127.0.0.1:4000/v1/chat/completions" \
+        -H "Authorization: Bearer ${router_key}" \
+        -H "Content-Type: application/json" \
+        -d "${smoke_payload}" || true
+    )"
+  else
+    smoke_status="$(
+      curl -sS -o "${smoke_output_file}" -w "%{http_code}" "http://127.0.0.1:4000/v1/chat/completions" \
+        -H "Content-Type: application/json" \
+        -d "${smoke_payload}" || true
+    )"
+  fi
+
+  if [[ ! "${smoke_status}" =~ ^2 ]]; then
+    echo "Chat smoke test failed (HTTP ${smoke_status})."
+    echo "Response:"
+    sed -n '1,160p' "${smoke_output_file}"
+    rm -f "${smoke_output_file}"
+    echo ""
+    echo "Recent logs:"
+    docker compose logs --tail=120 anyllm cost-router
+    exit 1
+  fi
+  rm -f "${smoke_output_file}"
+else
+  echo "[6/7] Chat smoke test skipped (SKIP_CHAT_SMOKE_TEST=1)."
+fi
+
+echo "[7/7] Ready."
 echo ""
 "${ROOT_DIR}/scripts/print-openclaw-settings.sh"

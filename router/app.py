@@ -9,9 +9,12 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import tiktoken
 import yaml
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+
+_enc = tiktoken.get_encoding("o200k_base")
 
 ANYLLM_BASE_URL = "http://anyllm:8000"
 ANYLLM_KEY = ""
@@ -252,30 +255,37 @@ def _load_model_aliases() -> dict[str, dict[str, Any]]:
     return _model_aliases_cache
 
 
-def _estimate_prompt_tokens(messages: Any) -> int:
-    if not isinstance(messages, list):
-        return 1
+def _estimate_prompt_tokens(request_body: dict[str, Any]) -> int:
+    import json as _json
 
-    characters = 0
-    for message in messages:
-        if not isinstance(message, dict):
-            continue
+    tokens = 0
+    messages = request_body.get("messages")
+    if isinstance(messages, list):
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            tokens += 4  # role + formatting overhead per message
 
-        content = message.get("content")
-        if isinstance(content, str):
-            characters += len(content)
-            continue
+            content = message.get("content")
+            if isinstance(content, str):
+                tokens += len(_enc.encode(content))
+                continue
 
-        if isinstance(content, list):
-            for item in content:
-                if isinstance(item, str):
-                    characters += len(item)
-                elif isinstance(item, dict):
-                    for text_key in ("text", "content", "input", "output"):
-                        value = item.get(text_key)
-                        if isinstance(value, str):
-                            characters += len(value)
-    return max(1, characters // 4)
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, str):
+                        tokens += len(_enc.encode(item))
+                    elif isinstance(item, dict):
+                        for text_key in ("text", "content", "input", "output"):
+                            value = item.get(text_key)
+                            if isinstance(value, str):
+                                tokens += len(_enc.encode(value))
+
+    tools = request_body.get("tools")
+    if isinstance(tools, list) and tools:
+        tokens += len(_enc.encode(_json.dumps(tools)))
+
+    return max(1, tokens)
 
 
 def _estimate_output_tokens(request_body: dict[str, Any], alias_default: int) -> int:
@@ -338,7 +348,7 @@ def _classify_request_tier(
     default_output_tokens: int,
     default_tier: str = "MEDIUM",
 ) -> str:
-    prompt_tokens = _estimate_prompt_tokens(request_body.get("messages"))
+    prompt_tokens = _estimate_prompt_tokens(request_body)
     output_tokens = _estimate_output_tokens(request_body, default_output_tokens)
     request_text = _extract_request_text(request_body.get("messages"))
 
@@ -568,16 +578,19 @@ def _sorted_candidates(
     request_body: dict[str, Any],
     default_output_tokens: int,
 ) -> list[dict[str, Any]]:
-    prompt_tokens = _estimate_prompt_tokens(request_body.get("messages"))
+    prompt_tokens = _estimate_prompt_tokens(request_body)
     output_tokens = _estimate_output_tokens(request_body, default_output_tokens)
 
-    scored = []
-    for candidate in candidates:
+    scored: list[tuple[int, float, int, dict[str, Any]]] = []
+    for index, candidate in enumerate(candidates):
         score = _candidate_score(candidate, pricing_map, prompt_tokens, output_tokens)
-        scored.append((score, candidate["model"], candidate))
+        # Rank priced candidates first; preserve configured order for ties and unpriced entries.
+        missing_pricing = 1 if math.isinf(score) else 0
+        normalized_score = score if not math.isinf(score) else 0.0
+        scored.append((missing_pricing, normalized_score, index, candidate))
 
-    scored.sort(key=lambda item: (item[0], item[1]))
-    return [item[2] for item in scored]
+    scored.sort(key=lambda item: (item[0], item[1], item[2]))
+    return [item[3] for item in scored]
 
 
 def _build_candidate_chain(
@@ -668,6 +681,74 @@ async def health() -> dict[str, Any]:
     }
 
 
+async def _forward_anyllm(
+    model_key: str,
+    forwarded_body: dict[str, Any],
+    is_stream: bool,
+    resp_headers: dict[str, str],
+) -> tuple[Response | None, dict[str, Any] | None]:
+    """Forward a request through the Any-LLM gateway (Docker mode)."""
+    upstream_headers = _build_upstream_headers()
+
+    if is_stream:
+        client = httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SEC)
+        try:
+            upstream = await client.send(
+                client.build_request(
+                    "POST",
+                    f"{ANYLLM_BASE_URL}/v1/chat/completions",
+                    headers=upstream_headers,
+                    json=forwarded_body,
+                ),
+                stream=True,
+            )
+        except Exception as exc:
+            await client.aclose()
+            return None, {"model": model_key, "error": str(exc)}
+
+        if upstream.status_code >= 400:
+            error_body = (await upstream.aread()).decode("utf-8", errors="replace")
+            await upstream.aclose()
+            await client.aclose()
+            return None, {"model": model_key, "status_code": upstream.status_code, "detail": error_body[:500]}
+
+        async def stream_bytes() -> Any:
+            try:
+                async for chunk in upstream.aiter_bytes():
+                    yield chunk
+            finally:
+                await upstream.aclose()
+                await client.aclose()
+
+        return StreamingResponse(
+            stream_bytes(),
+            status_code=upstream.status_code,
+            media_type=upstream.headers.get("content-type", "text/event-stream"),
+            headers=resp_headers,
+        ), None
+
+    # Non-streaming
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SEC) as client:
+            upstream = await client.post(
+                f"{ANYLLM_BASE_URL}/v1/chat/completions",
+                headers=upstream_headers,
+                json=forwarded_body,
+            )
+    except Exception as exc:
+        return None, {"model": model_key, "error": str(exc)}
+
+    if upstream.status_code >= 400:
+        return None, {"model": model_key, "status_code": upstream.status_code, "detail": upstream.text[:500]}
+
+    return Response(
+        content=upstream.content,
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get("content-type", "application/json"),
+        headers=resp_headers,
+    ), None
+
+
 @app.get("/v1/models")
 async def list_models(request: Request) -> dict[str, Any]:
     _require_router_auth(request)
@@ -754,97 +835,24 @@ async def chat_completions(request: Request) -> Response:
     if "user" not in request_body and ROUTER_DEFAULT_USER:
         request_body["user"] = ROUTER_DEFAULT_USER
 
-    upstream_headers = _build_upstream_headers()
     is_stream = bool(request_body.get("stream"))
 
     errors: list[dict[str, Any]] = []
 
-    if is_stream:
-        for candidate in ordered_candidates:
-            model_key = candidate["model"]
-            routed_tier = candidate.get("_tier")
-            forwarded_body = dict(request_body)
-            forwarded_body["model"] = model_key
+    for candidate in ordered_candidates:
+        model_key = candidate["model"]
+        routed_tier = candidate.get("_tier")
+        forwarded_body = dict(request_body)
+        forwarded_body["model"] = model_key
+        resp_headers = _response_headers(alias_name, model_key, selected_tier, effective_tier, routed_tier)
+        response, error = await _forward_anyllm(model_key, forwarded_body, is_stream, resp_headers)
 
-            client = httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SEC)
-            try:
-                upstream = await client.send(
-                    client.build_request(
-                        "POST",
-                        f"{ANYLLM_BASE_URL}/v1/chat/completions",
-                        headers=upstream_headers,
-                        json=forwarded_body,
-                    ),
-                    stream=True,
-                )
-            except Exception as exc:
-                await client.aclose()
-                errors.append({"model": model_key, "tier": routed_tier, "error": str(exc)})
-                continue
+        if error is not None:
+            error["tier"] = routed_tier
+            errors.append(error)
+            continue
 
-            if upstream.status_code >= 400:
-                error_body = (await upstream.aread()).decode("utf-8", errors="replace")
-                await upstream.aclose()
-                await client.aclose()
-                errors.append(
-                    {
-                        "model": model_key,
-                        "tier": routed_tier,
-                        "status_code": upstream.status_code,
-                        "detail": error_body[:500],
-                    }
-                )
-                continue
-
-            async def stream_bytes() -> Any:
-                try:
-                    async for chunk in upstream.aiter_bytes():
-                        yield chunk
-                finally:
-                    await upstream.aclose()
-                    await client.aclose()
-
-            return StreamingResponse(
-                stream_bytes(),
-                status_code=upstream.status_code,
-                media_type=upstream.headers.get("content-type", "text/event-stream"),
-                headers=_response_headers(alias_name, model_key, selected_tier, effective_tier, routed_tier),
-            )
-
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SEC) as client:
-        for candidate in ordered_candidates:
-            model_key = candidate["model"]
-            routed_tier = candidate.get("_tier")
-            forwarded_body = dict(request_body)
-            forwarded_body["model"] = model_key
-
-            try:
-                upstream = await client.post(
-                    f"{ANYLLM_BASE_URL}/v1/chat/completions",
-                    headers=upstream_headers,
-                    json=forwarded_body,
-                )
-            except Exception as exc:
-                errors.append({"model": model_key, "tier": routed_tier, "error": str(exc)})
-                continue
-
-            if upstream.status_code >= 400:
-                errors.append(
-                    {
-                        "model": model_key,
-                        "tier": routed_tier,
-                        "status_code": upstream.status_code,
-                        "detail": upstream.text[:500],
-                    }
-                )
-                continue
-
-            return Response(
-                content=upstream.content,
-                status_code=upstream.status_code,
-                media_type=upstream.headers.get("content-type", "application/json"),
-                headers=_response_headers(alias_name, model_key, selected_tier, effective_tier, routed_tier),
-            )
+        return response
 
     return JSONResponse(
         status_code=status.HTTP_502_BAD_GATEWAY,

@@ -1,105 +1,83 @@
 # ClawSwitch
 
-This repo provides a local stack that routes OpenAI-compatible chat requests by capability tier first, then lowest estimated cost within that tier.
+A local LLM cost router that runs entirely on your machine. No hosted service, no third-party proxy, no data leaving your network except directly to the LLM providers you choose.
 
-It uses:
-- `any-llm-gateway` for provider credentials, usage logging, and model pricing storage
-- a thin local `cost-router` service that classifies request tier and then picks the cheapest candidate in that tier (with fallback)
+You call one endpoint with `model: "claw-auto-cheap"`. ClawSwitch classifies your request by complexity (`SIMPLE` / `MEDIUM` / `COMPLEX` / `REASONING`), picks the cheapest model in that tier, and falls back to others if it fails. Same results, lower cost, full privacy.
 
-No BlockRun relay is involved. Traffic flow is:
+**Everything runs locally.** Your API keys stay on your machine. Your prompts go straight from your machine to the provider — OpenAI, Anthropic, Mistral, etc. — with nothing in between that you don't control.
 
-`OpenClaw -> local cost-router -> local Any-LLM gateway -> provider endpoint`
+```
+Your app → ClawSwitch (:4000) → Any-LLM gateway (:8000) → provider API
+             (your machine)         (your machine)
+```
 
-## What You Get
+## Install
 
-- Local OpenAI-compatible endpoint at `http://127.0.0.1:4000/v1/chat/completions`
-- Model aliases (for example `claw-auto-cheap`) with multiple provider candidates
-- Tier-first routing (`SIMPLE`, `MEDIUM`, `COMPLEX`, `REASONING`)
-- Cheapest-first selection within tier based on Any-LLM pricing table
-- Automatic fallback across models (and optional cross-tier fallback)
+There are two ways to run ClawSwitch. Both give you the same functionality.
 
-## 60-Second Setup
+### Option A: Docker (recommended)
+
+Requires: Docker + Docker Compose
 
 ```bash
 OPENAI_API_KEY=your-key ./scripts/install.sh
 ```
 
-That command:
-- creates local config files if missing
-- generates secure local keys
-- starts all services
-- prints the exact OpenClaw settings to copy/paste
+That's it. This creates config files, generates local keys, starts all services, runs a smoke test, and prints your connection settings. Pass `ANTHROPIC_API_KEY`, `MISTRAL_API_KEY`, or `GEMINI_API_KEY` instead (or in addition) for other providers.
 
-If you use Anthropic/Mistral/Gemini instead, pass those keys instead.
-
-## Quick Start
-
-1. Copy templates:
+To skip the smoke test:
 ```bash
-cp .env.example .env
-cp gateway/config.yml.example gateway/config.yml
-cp router/models.yml.example router/models.yml
+SKIP_CHAT_SMOKE_TEST=1 OPENAI_API_KEY=your-key ./scripts/install.sh
 ```
 
-2. Edit `.env` and set:
-- `ANYLLM_MASTER_KEY`
-- provider keys you plan to use (for example `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`)
-- optional `ROUTER_SHARED_KEY` for local router auth
-
-3. Edit `gateway/config.yml`:
-- keep `master_key: "${ANYLLM_MASTER_KEY}"`
-- keep only the providers you use
-- update pricing values for the exact models you route to
-
-4. Edit `router/models.yml`:
-- define aliases as either:
-  - tiered (`tiers:`) for capability-first routing
-  - flat (`candidates:`) for pure cost-first routing
-- model IDs must be `provider:model` format
-
-5. Start the stack:
+Other commands:
 ```bash
-docker compose up -d --build
+make up          # start
+make down        # stop
+make logs        # tail logs
+make doctor      # health check
+make print-openclaw  # show connection settings
 ```
 
-6. Verify:
+### Option B: Local (no Docker)
+
+Requires: Python 3.11+, Postgres
+
+1. Start Postgres if it isn't running:
+```bash
+# macOS
+brew install postgresql@16 && brew services start postgresql@16
+# Ubuntu
+sudo apt install postgresql && sudo systemctl start postgresql
+```
+
+2. Install dependencies:
+```bash
+make install-local
+```
+This creates a `.venv/`, installs `any-llm-sdk[gateway]` + router deps, sets up the `gateway` database, and copies config templates.
+
+3. Start both services (two terminals):
+```bash
+# Terminal 1: any-llm gateway on :8000
+make run-gateway-local
+
+# Terminal 2: cost router on :4000
+make run-local
+```
+
+## Verify
+
 ```bash
 curl -s http://127.0.0.1:4000/health | jq
-curl -s http://127.0.0.1:4000/v1/models | jq
 ```
 
-If `ROUTER_SHARED_KEY` is set, include:
-```bash
--H "Authorization: Bearer <ROUTER_SHARED_KEY>"
-```
+## Usage
 
-Shortcut commands:
-```bash
-make install
-make doctor
-make print-openclaw
-make logs
-```
-
-## OpenClaw Wiring
-
-Point OpenClaw at:
-- Base URL: `http://127.0.0.1:4000/v1`
-- API key:
-  - if `ROUTER_SHARED_KEY` is set, use that key
-  - if `ROUTER_SHARED_KEY` is empty, any non-empty key is typically fine for OpenAI-compatible clients
-- Model: one alias from `router/models.yml` (for example `claw-auto-cheap`)
-
-To print these values from your current local setup:
-```bash
-./scripts/print-openclaw-settings.sh
-```
-
-## Example Request
+ClawSwitch exposes a standard OpenAI-compatible API at `http://127.0.0.1:4000/v1`.
 
 ```bash
 curl -s http://127.0.0.1:4000/v1/chat/completions \
-  -H "Authorization: Bearer ${ROUTER_SHARED_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "claw-auto-cheap",
@@ -107,9 +85,38 @@ curl -s http://127.0.0.1:4000/v1/chat/completions \
   }' | jq
 ```
 
-## Updating Pricing
+If `ROUTER_SHARED_KEY` is set, add `-H "Authorization: Bearer $ROUTER_SHARED_KEY"`.
 
-Use the helper script:
+Point any OpenAI-compatible client (OpenClaw, Cursor, etc.) at:
+- **Base URL**: `http://127.0.0.1:4000/v1`
+- **API key**: your `ROUTER_SHARED_KEY` (or any non-empty string if unset)
+- **Model**: `claw-auto-cheap` (or any alias from `router/models.yml`)
+
+Run `make print-openclaw` to see these values for your current setup.
+
+## How Routing Works
+
+### Tiered routing (default)
+
+1. Classify the request into `SIMPLE` / `MEDIUM` / `COMPLEX` / `REASONING` based on message length, keywords, tool use, and output token limits
+2. Sort that tier's candidates by estimated cost (input + output)
+3. Try cheapest first; on failure, fall back within the tier, then across tiers
+
+### Flat routing
+
+Skip classification, just pick the cheapest candidate across all models.
+
+Configure both styles in `router/models.yml` — use `tiers:` for tiered, `candidates:` for flat. See `router/models.yml.example` for the full format.
+
+## Configuration
+
+| File | Purpose |
+|------|---------|
+| `.env` | Provider API keys, router auth, ports |
+| `gateway/config.yml` | Any-LLM provider credentials, model pricing |
+| `router/models.yml` | Model aliases, tier definitions, candidates |
+
+### Updating pricing
 
 ```bash
 ANYLLM_MASTER_KEY=your-key ./scripts/set-pricing.sh \
@@ -117,25 +124,12 @@ ANYLLM_MASTER_KEY=your-key ./scripts/set-pricing.sh \
   anthropic:claude-3-5-haiku-latest 0.80 4.00
 ```
 
-Or update `gateway/config.yml` and restart.
+Or edit `gateway/config.yml` directly and restart.
 
-## Routing Behavior
+## Response Headers
 
-- Tiered alias flow:
-  1. Classify request into `SIMPLE` / `MEDIUM` / `COMPLEX` / `REASONING`
-  2. Sort that tier's candidates by estimated cost
-  3. Try candidates in order, then optionally move to fallback tiers
-- Flat alias flow:
-  - Skip tiering and route purely by cheapest candidate
-
-## Notes
-
-- Cost estimate uses:
-  - prompt tokens estimated from message text size
-  - output tokens from `max_completion_tokens`/`max_tokens` (or alias default)
-- If pricing is missing for a candidate model, it is still usable but ranked after priced candidates.
-- Response headers include routing metadata:
-  - `x-routed-model`
-  - `x-router-selected-tier` (for tiered aliases)
-  - `x-router-effective-tier` (nearest configured tier used)
-  - `x-router-routed-tier` (tier of the actual chosen model)
+Every response includes routing metadata:
+- `x-routed-model` — the actual model used
+- `x-router-selected-tier` — tier the request was classified as
+- `x-router-effective-tier` — nearest available tier used
+- `x-router-routed-tier` — tier of the chosen model

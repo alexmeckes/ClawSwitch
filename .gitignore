@@ -3,3 +3,4 @@ gateway/config.yml
 router/models.yml
 __pycache__/
 *.pyc
+.venv/

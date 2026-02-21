@@ -8,20 +8,41 @@ models:
     tiers:
       SIMPLE:
         - model: openai:gpt-4.1-mini
+          input_price_per_million: 0.40
+          output_price_per_million: 1.60
         - model: anthropic:claude-3-5-haiku-latest
+          input_price_per_million: 0.80
+          output_price_per_million: 4.00
       MEDIUM:
         - model: openai:gpt-4.1-mini
+          input_price_per_million: 0.40
+          output_price_per_million: 1.60
         - model: anthropic:claude-3-5-sonnet-latest
+          input_price_per_million: 3.00
+          output_price_per_million: 15.00
       COMPLEX:
         - model: openai:gpt-4.1
+          input_price_per_million: 2.00
+          output_price_per_million: 8.00
         - model: anthropic:claude-3-7-sonnet-latest
+          input_price_per_million: 3.00
+          output_price_per_million: 15.00
       REASONING:
         - model: openai:o4-mini
+          input_price_per_million: 1.10
+          output_price_per_million: 4.40
         - model: anthropic:claude-3-7-sonnet-latest
+          input_price_per_million: 3.00
+          output_price_per_million: 15.00
 
   claw-cost-only:
     description: "Backwards-compatible pure cost-first alias"
     default_output_tokens: 1200
     candidates:
       - model: openai:gpt-4.1-mini
+        input_price_per_million: 0.40
+        output_price_per_million: 1.60
       - model: anthropic:claude-3-5-haiku-latest
+        input_price_per_million: 0.80
+        output_price_per_million: 4.00
+
