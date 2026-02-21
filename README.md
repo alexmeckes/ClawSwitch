@@ -137,17 +137,17 @@ models:
   claw-auto-cheap:
     tiers:
       SIMPLE:
-        - model: gemini:gemini-2.0-flash     # cheap, fast
-        - model: openai:gpt-4.1-mini
+        - model: gemini:gemini-2.5-flash     # cheap, fast
+        - model: anthropic:claude-haiku-4-5
       MEDIUM:
-        - model: openai:gpt-4.1-mini
-        - model: anthropic:claude-3-5-sonnet-latest
+        - model: gemini:gemini-2.5-flash
+        - model: anthropic:claude-sonnet-4-6
       COMPLEX:
-        - model: openai:gpt-4.1
-        - model: anthropic:claude-3-7-sonnet-latest
+        - model: openai:gpt-5
+        - model: anthropic:claude-sonnet-4-6
       REASONING:
-        - model: openai:o4-mini
-        - model: anthropic:claude-3-7-sonnet-latest
+        - model: openai:o3-mini
+        - model: gemini:gemini-2.5-pro
 ```
 
 You don't need all four tiers. If you only care about SIMPLE and COMPLEX, just define those two — ClawSwitch will map requests to the nearest available tier.
@@ -158,15 +158,15 @@ Inline pricing on each candidate controls the cost sort order. Lower total cost 
 
 ```yaml
       SIMPLE:
-        - model: gemini:gemini-2.0-flash
-          input_price_per_million: 0.10
-          output_price_per_million: 0.40
-        - model: openai:gpt-4.1-mini
-          input_price_per_million: 0.40
-          output_price_per_million: 1.60
+        - model: gemini:gemini-2.5-flash
+          input_price_per_million: 0.30
+          output_price_per_million: 2.50
+        - model: anthropic:claude-haiku-4-5
+          input_price_per_million: 1.00
+          output_price_per_million: 5.00
 ```
 
-With these prices and a typical request, Gemini Flash costs ~$0.0003 vs GPT-4.1 Mini at ~$0.0012, so Flash is tried first. If you'd rather prefer GPT-4.1 Mini, just swap the prices or remove Gemini from the tier.
+With these prices and a typical request, Gemini 2.5 Flash costs ~$0.002 vs Claude Haiku at ~$0.004, so Flash is tried first. If you'd rather prefer Haiku, just swap the prices or remove Gemini from the tier.
 
 Pricing is also available from the gateway (`gateway/config.yml`) — inline prices in `models.yml` take priority.
 
@@ -190,12 +190,12 @@ If you don't want tier classification at all, use `candidates:` instead of `tier
   my-cheapest:
     description: "Always use the cheapest model"
     candidates:
-      - model: gemini:gemini-2.0-flash
-        input_price_per_million: 0.10
-        output_price_per_million: 0.40
-      - model: openai:gpt-4.1-mini
-        input_price_per_million: 0.40
-        output_price_per_million: 1.60
+      - model: gemini:gemini-2.5-flash
+        input_price_per_million: 0.30
+        output_price_per_million: 2.50
+      - model: anthropic:claude-haiku-4-5
+        input_price_per_million: 1.00
+        output_price_per_million: 5.00
 ```
 
 ### Creating multiple aliases
@@ -207,17 +207,17 @@ models:
   cheap:
     description: "Cheapest possible"
     candidates:
-      - model: gemini:gemini-2.0-flash
-        input_price_per_million: 0.10
-        output_price_per_million: 0.40
+      - model: gemini:gemini-2.5-flash
+        input_price_per_million: 0.30
+        output_price_per_million: 2.50
 
   smart:
     description: "Best available"
     candidates:
-      - model: anthropic:claude-3-7-sonnet-latest
+      - model: anthropic:claude-sonnet-4-6
         input_price_per_million: 3.00
         output_price_per_million: 15.00
-      - model: openai:gpt-4.1
+      - model: openai:gpt-5
         input_price_per_million: 2.00
         output_price_per_million: 8.00
 
@@ -225,11 +225,11 @@ models:
     description: "Tier-routed"
     tiers:
       SIMPLE:
-        - model: gemini:gemini-2.0-flash
-          input_price_per_million: 0.10
-          output_price_per_million: 0.40
+        - model: gemini:gemini-2.5-flash
+          input_price_per_million: 0.30
+          output_price_per_million: 2.50
       COMPLEX:
-        - model: openai:gpt-4.1
+        - model: openai:gpt-5
           input_price_per_million: 2.00
           output_price_per_million: 8.00
 ```
@@ -241,7 +241,7 @@ Then use `model: "cheap"`, `model: "smart"`, or `model: "auto"` in your requests
 You can also skip aliases entirely and send requests to a specific model:
 
 ```bash
-curl ... -d '{"model": "gemini:gemini-2.0-flash", ...}'
+curl ... -d '{"model": "gemini:gemini-2.5-flash", ...}'
 ```
 
 Any `provider:model` string is forwarded directly to the gateway.
