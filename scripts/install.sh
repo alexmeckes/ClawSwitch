@@ -151,7 +151,7 @@ user_create_status="$(
   curl -sS -o /dev/null -w "%{http_code}" "http://127.0.0.1:8000/v1/users" \
     -H "Authorization: Bearer ${master_key}" \
     -H "Content-Type: application/json" \
-    -d '{"user_id":"openclaw-local","name":"openclaw-local"}' || true
+    -d '{"user_id":"openclaw-local","alias":"openclaw-local"}' || true
 )"
 if [[ "${user_create_status}" =~ ^2 ]]; then
   echo "  Gateway user 'openclaw-local' created."

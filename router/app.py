@@ -654,6 +654,23 @@ def _response_headers(
     return headers
 
 
+def _is_empty_chat_response(upstream: httpx.Response) -> bool:
+    content_type = upstream.headers.get("content-type", "").lower()
+    if "application/json" not in content_type:
+        return False
+
+    try:
+        payload = upstream.json()
+    except Exception:
+        return False
+
+    if not isinstance(payload, dict):
+        return False
+
+    choices = payload.get("choices")
+    return isinstance(choices, list) and len(choices) == 0
+
+
 @app.on_event("startup")
 async def startup() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -740,6 +757,13 @@ async def _forward_anyllm(
 
     if upstream.status_code >= 400:
         return None, {"model": model_key, "status_code": upstream.status_code, "detail": upstream.text[:500]}
+
+    if _is_empty_chat_response(upstream):
+        return None, {
+            "model": model_key,
+            "status_code": upstream.status_code,
+            "detail": "Upstream returned empty choices; trying fallback candidate.",
+        }
 
     return Response(
         content=upstream.content,

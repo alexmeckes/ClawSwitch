@@ -22,7 +22,12 @@ install-local:
 	./scripts/install-local.sh
 
 run-gateway-local:
+	set -a; [ -f .env ] && . ./.env; set +a; \
 	.venv/bin/any-llm-gateway serve --config gateway/config.yml
 
 run-local:
-	ANYLLM_BASE_URL=http://localhost:8000 ROUTER_MODEL_MAP_FILE=./router/models.yml .venv/bin/uvicorn router.app:app --host 0.0.0.0 --port 4000
+	set -a; [ -f .env ] && . ./.env; set +a; \
+	ANYLLM_BASE_URL="$${ANYLLM_BASE_URL:-http://localhost:8000}" \
+	ANYLLM_KEY="$${ANYLLM_KEY:-$${ANYLLM_MASTER_KEY}}" \
+	ROUTER_MODEL_MAP_FILE=./router/models.yml \
+	.venv/bin/uvicorn router.app:app --host 0.0.0.0 --port "$${ROUTER_PORT:-4000}"

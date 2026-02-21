@@ -70,6 +70,8 @@ make install-local
 ```
 This creates a `.venv/`, installs `any-llm-sdk[gateway]` + router deps, sets up the `gateway` database, and copies config templates.
 
+Before starting services, set at least one provider key in `.env` and ensure `ANYLLM_MASTER_KEY` is set.
+
 3. Start both services (two terminals):
 ```bash
 # Terminal 1: any-llm gateway on :8000
@@ -77,6 +79,15 @@ make run-gateway-local
 
 # Terminal 2: cost router on :4000
 make run-local
+```
+
+4. Create the default gateway user (required for router requests):
+```bash
+source .env
+curl -s http://127.0.0.1:8000/v1/users \
+  -H "Authorization: Bearer $ANYLLM_MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"openclaw-local","alias":"openclaw-local"}'
 ```
 
 ## Verify
