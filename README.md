@@ -1,4 +1,4 @@
-# Local Any-LLM Cost Router for OpenClaw
+# ClawSwitch
 
 This repo provides a local stack that routes OpenAI-compatible chat requests by capability tier first, then lowest estimated cost within that tier.
 
