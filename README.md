@@ -124,23 +124,135 @@ Skip classification, just pick the cheapest candidate across all models.
 
 Configure both styles in `router/models.yml` — use `tiers:` for tiered, `candidates:` for flat. See `router/models.yml.example` for the full format.
 
-## Configuration
+## Customizing Your Routes
+
+Everything is controlled in `router/models.yml`. You decide which models go in which tiers, what counts as "cheap", and how failures are handled. Changes are picked up on the next request — no restart needed.
+
+### Choosing models per tier
+
+Each tier has a list of candidates. Put the models you want in each one:
+
+```yaml
+models:
+  claw-auto-cheap:
+    tiers:
+      SIMPLE:
+        - model: gemini:gemini-2.0-flash     # cheap, fast
+        - model: openai:gpt-4.1-mini
+      MEDIUM:
+        - model: openai:gpt-4.1-mini
+        - model: anthropic:claude-3-5-sonnet-latest
+      COMPLEX:
+        - model: openai:gpt-4.1
+        - model: anthropic:claude-3-7-sonnet-latest
+      REASONING:
+        - model: openai:o4-mini
+        - model: anthropic:claude-3-7-sonnet-latest
+```
+
+You don't need all four tiers. If you only care about SIMPLE and COMPLEX, just define those two — ClawSwitch will map requests to the nearest available tier.
+
+### Setting prices
+
+Inline pricing on each candidate controls the cost sort order. Lower total cost = tried first.
+
+```yaml
+      SIMPLE:
+        - model: gemini:gemini-2.0-flash
+          input_price_per_million: 0.10
+          output_price_per_million: 0.40
+        - model: openai:gpt-4.1-mini
+          input_price_per_million: 0.40
+          output_price_per_million: 1.60
+```
+
+With these prices and a typical request, Gemini Flash costs ~$0.0003 vs GPT-4.1 Mini at ~$0.0012, so Flash is tried first. If you'd rather prefer GPT-4.1 Mini, just swap the prices or remove Gemini from the tier.
+
+Pricing is also available from the gateway (`gateway/config.yml`) — inline prices in `models.yml` take priority.
+
+### Controlling fallback
+
+When a model fails (rate limit, outage, etc.), ClawSwitch tries the next candidate in the tier, then moves to other tiers. You control this:
+
+```yaml
+  claw-auto-cheap:
+    fallback_tiers_on_failure: true           # try other tiers if all candidates in the selected tier fail
+    tier_fallback_order: [COMPLEX, REASONING, SIMPLE]  # order to try after the selected tier
+```
+
+Set `fallback_tiers_on_failure: false` to only try models in the selected tier — no cross-tier fallback.
+
+### Flat routing (no tiers)
+
+If you don't want tier classification at all, use `candidates:` instead of `tiers:`. This just picks the cheapest model every time:
+
+```yaml
+  my-cheapest:
+    description: "Always use the cheapest model"
+    candidates:
+      - model: gemini:gemini-2.0-flash
+        input_price_per_million: 0.10
+        output_price_per_million: 0.40
+      - model: openai:gpt-4.1-mini
+        input_price_per_million: 0.40
+        output_price_per_million: 1.60
+```
+
+### Creating multiple aliases
+
+You can define as many aliases as you want. Use different ones for different use cases:
+
+```yaml
+models:
+  cheap:
+    description: "Cheapest possible"
+    candidates:
+      - model: gemini:gemini-2.0-flash
+        input_price_per_million: 0.10
+        output_price_per_million: 0.40
+
+  smart:
+    description: "Best available"
+    candidates:
+      - model: anthropic:claude-3-7-sonnet-latest
+        input_price_per_million: 3.00
+        output_price_per_million: 15.00
+      - model: openai:gpt-4.1
+        input_price_per_million: 2.00
+        output_price_per_million: 8.00
+
+  auto:
+    description: "Tier-routed"
+    tiers:
+      SIMPLE:
+        - model: gemini:gemini-2.0-flash
+          input_price_per_million: 0.10
+          output_price_per_million: 0.40
+      COMPLEX:
+        - model: openai:gpt-4.1
+          input_price_per_million: 2.00
+          output_price_per_million: 8.00
+```
+
+Then use `model: "cheap"`, `model: "smart"`, or `model: "auto"` in your requests.
+
+### Direct model passthrough
+
+You can also skip aliases entirely and send requests to a specific model:
+
+```bash
+curl ... -d '{"model": "gemini:gemini-2.0-flash", ...}'
+```
+
+Any `provider:model` string is forwarded directly to the gateway.
+
+## Configuration Files
 
 | File | Purpose |
 |------|---------|
-| `.env` | Provider API keys, router auth, ports |
-| `gateway/config.yml` | Any-LLM provider credentials, model pricing |
-| `router/models.yml` | Model aliases, tier definitions, candidates |
-
-### Updating pricing
-
-```bash
-ANYLLM_MASTER_KEY=your-key ./scripts/set-pricing.sh \
-  openai:gpt-4.1-mini 0.40 1.60 \
-  anthropic:claude-3-5-haiku-latest 0.80 4.00
-```
-
-Or edit `gateway/config.yml` directly and restart.
+| `router/models.yml` | Aliases, tiers, candidates, inline pricing |
+| `gateway/config.yml` | Provider API keys, gateway-level pricing |
+| `.env` | API keys, router auth, ports |
 
 ## Response Headers
 
