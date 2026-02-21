@@ -12,11 +12,11 @@ You call one endpoint with `model: "claw-auto-cheap"`. ClawSwitch classifies you
 ┌────────────────────┼─────────────────────┐
 │  your machine      │                     │
 │                    ▼                     │
-│          ClawSwitch (:4000)              │
+│            ClawSwitch (:4000)            │
 │          classifies, picks cheapest      │
 │                    │                     │
 │                    ▼                     │
-│        Any-LLM gateway (:8000)           │
+│            LLM gateway (:8000)           │
 │                    │                     │
 └────────────────────┼─────────────────────┘
                      │
@@ -274,3 +274,7 @@ Every response includes routing metadata:
 - `x-router-selected-tier` — tier the request was classified as
 - `x-router-effective-tier` — nearest available tier used
 - `x-router-routed-tier` — tier of the chosen model
+
+## Built With
+
+- [Any-LLM](https://github.com/mozilla-ai/any-llm) by Mozilla-AI — the local gateway that handles provider dispatch and API translation
