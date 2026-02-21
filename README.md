@@ -16,7 +16,7 @@ You call one endpoint with `model: "claw-auto-cheap"`. ClawSwitch classifies you
 │          classifies, picks cheapest      │
 │                    │                     │
 │                    ▼                     │
-│            LLM gateway (:8000)           │
+│          Any-LLM gateway (:8000)          │
 │                    │                     │
 └────────────────────┼─────────────────────┘
                      │
