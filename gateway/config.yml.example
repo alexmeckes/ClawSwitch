@@ -1,0 +1,25 @@
+database_url: "postgresql://gateway:gateway@postgres:5432/gateway"
+host: "0.0.0.0"
+port: 8000
+master_key: "${ANYLLM_MASTER_KEY}"
+
+providers:
+  openai:
+    api_key: "${OPENAI_API_KEY}"
+  anthropic:
+    api_key: "${ANTHROPIC_API_KEY}"
+  mistral:
+    api_key: "${MISTRAL_API_KEY}"
+  gemini:
+    api_key: "${GEMINI_API_KEY}"
+  # ollama:
+  #   api_base: "http://host.docker.internal:11434"
+
+pricing:
+  # Replace these with current pricing for the exact models you route to.
+  openai:gpt-4.1-mini:
+    input_price_per_million: 0.40
+    output_price_per_million: 1.60
+  anthropic:claude-3-5-haiku-latest:
+    input_price_per_million: 0.80
+    output_price_per_million: 4.00

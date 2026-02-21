@@ -1,0 +1,27 @@
+models:
+  claw-auto-cheap:
+    description: "Tier-first + cheapest-in-tier routing (recommended default)"
+    default_output_tokens: 700
+    default_tier: MEDIUM
+    fallback_tiers_on_failure: true
+    tier_fallback_order: [COMPLEX, REASONING, SIMPLE]
+    tiers:
+      SIMPLE:
+        - model: openai:gpt-4.1-mini
+        - model: anthropic:claude-3-5-haiku-latest
+      MEDIUM:
+        - model: openai:gpt-4.1-mini
+        - model: anthropic:claude-3-5-sonnet-latest
+      COMPLEX:
+        - model: openai:gpt-4.1
+        - model: anthropic:claude-3-7-sonnet-latest
+      REASONING:
+        - model: openai:o4-mini
+        - model: anthropic:claude-3-7-sonnet-latest
+
+  claw-cost-only:
+    description: "Backwards-compatible pure cost-first alias"
+    default_output_tokens: 1200
+    candidates:
+      - model: openai:gpt-4.1-mini
+      - model: anthropic:claude-3-5-haiku-latest

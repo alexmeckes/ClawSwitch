@@ -1,0 +1,49 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gateway
+      POSTGRES_PASSWORD: gateway
+      POSTGRES_DB: gateway
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  anyllm:
+    image: ghcr.io/mozilla-ai/any-llm/gateway:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["any-llm-gateway", "serve", "--config", "/app/config.yml"]
+    volumes:
+      - ./gateway/config.yml:/app/config.yml:ro
+    ports:
+      - "127.0.0.1:${ANYLLM_PORT:-8000}:8000"
+    restart: unless-stopped
+
+  cost-router:
+    build:
+      context: ./router
+    depends_on:
+      - anyllm
+    environment:
+      ANYLLM_BASE_URL: http://anyllm:8000
+      ANYLLM_KEY: ${ANYLLM_MASTER_KEY}
+      ROUTER_SHARED_KEY: ${ROUTER_SHARED_KEY}
+      ROUTER_DEFAULT_USER: ${ROUTER_DEFAULT_USER:-openclaw-local}
+      ROUTER_MODEL_MAP_FILE: /app/models.yml
+      PRICING_CACHE_TTL_SEC: ${PRICING_CACHE_TTL_SEC:-60}
+      REQUEST_TIMEOUT_SEC: ${REQUEST_TIMEOUT_SEC:-240}
+    volumes:
+      - ./router/models.yml:/app/models.yml:ro
+    ports:
+      - "127.0.0.1:${ROUTER_PORT:-4000}:4000"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
