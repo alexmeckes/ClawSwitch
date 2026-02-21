@@ -1,6 +1,6 @@
 # ClawSwitch
 
-A local LLM cost router that runs entirely on your machine. No hosted service, no third-party proxy, no data leaving your network except directly to the LLM providers you choose.
+A cost-saving router for LLM APIs that runs entirely on your machine. No hosted service, no third-party proxy, no data leaving your network except directly to the LLM providers you choose.
 
 You call one endpoint with `model: "claw-auto-cheap"`. ClawSwitch classifies your request by complexity (`SIMPLE` / `MEDIUM` / `COMPLEX` / `REASONING`), picks the cheapest model in that tier, and falls back to others if it fails. Same results, lower cost, full privacy.
 
