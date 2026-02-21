@@ -77,7 +77,7 @@ env_upsert() {
   mv "${tmp_file}" "${file}"
 }
 
-echo "[1/6] Preparing local config files..."
+echo "[1/8] Preparing local config files..."
 if [ ! -f ".env" ]; then
   cp .env.example .env
 fi
@@ -88,7 +88,7 @@ if [ ! -f "router/models.yml" ]; then
   cp router/models.yml.example router/models.yml
 fi
 
-echo "[2/6] Applying environment values..."
+echo "[2/8] Applying environment values..."
 for key_var in OPENAI_API_KEY ANTHROPIC_API_KEY MISTRAL_API_KEY GEMINI_API_KEY ROUTER_SHARED_KEY; do
   value="${!key_var:-}"
   if [ -n "${value}" ]; then
@@ -108,7 +108,7 @@ if [ -z "${router_key}" ] && [ "${GENERATE_ROUTER_KEY:-1}" = "1" ]; then
   env_upsert "ROUTER_SHARED_KEY" "${router_key}" ".env"
 fi
 
-echo "[3/7] Checking provider keys..."
+echo "[3/8] Checking provider keys..."
 has_provider_key=0
 for key_var in OPENAI_API_KEY ANTHROPIC_API_KEY MISTRAL_API_KEY GEMINI_API_KEY; do
   value="$(env_get "${key_var}" ".env")"
@@ -127,10 +127,10 @@ if [ "${has_provider_key}" -eq 0 ]; then
   exit 1
 fi
 
-echo "[4/7] Starting stack..."
+echo "[4/8] Starting stack..."
 docker compose up -d --build
 
-echo "[5/7] Waiting for health checks..."
+echo "[5/8] Waiting for health checks..."
 deadline=$((SECONDS + 120))
 while [ "${SECONDS}" -lt "${deadline}" ]; do
   if curl -fsS "http://127.0.0.1:4000/health" >/dev/null 2>&1; then
@@ -146,8 +146,23 @@ if ! curl -fsS "http://127.0.0.1:4000/health" >/dev/null 2>&1; then
   exit 1
 fi
 
+echo "[6/8] Creating gateway user..."
+user_create_status="$(
+  curl -sS -o /dev/null -w "%{http_code}" "http://127.0.0.1:8000/v1/users" \
+    -H "Authorization: Bearer ${master_key}" \
+    -H "Content-Type: application/json" \
+    -d '{"user_id":"openclaw-local","name":"openclaw-local"}' || true
+)"
+if [[ "${user_create_status}" =~ ^2 ]]; then
+  echo "  Gateway user 'openclaw-local' created."
+elif [ "${user_create_status}" = "409" ]; then
+  echo "  Gateway user 'openclaw-local' already exists."
+else
+  echo "  Warning: could not create gateway user (HTTP ${user_create_status}). Continuing anyway."
+fi
+
 if [ "${SKIP_CHAT_SMOKE_TEST:-0}" != "1" ]; then
-  echo "[6/7] Running chat smoke test..."
+  echo "[7/8] Running chat smoke test..."
   router_key="$(env_get "ROUTER_SHARED_KEY" ".env")"
   default_model="$(env_get "OPENCLAW_MODEL" ".env")"
   if [ -z "${default_model}" ] && [ -f "router/models.yml" ]; then
@@ -190,9 +205,9 @@ EOF
   fi
   rm -f "${smoke_output_file}"
 else
-  echo "[6/7] Chat smoke test skipped (SKIP_CHAT_SMOKE_TEST=1)."
+  echo "[7/8] Chat smoke test skipped (SKIP_CHAT_SMOKE_TEST=1)."
 fi
 
-echo "[7/7] Ready."
+echo "[8/8] Ready."
 echo ""
 "${ROOT_DIR}/scripts/print-openclaw-settings.sh"
