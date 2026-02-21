@@ -72,9 +72,32 @@ make run-local
 curl -s http://127.0.0.1:4000/health | jq
 ```
 
-## Usage
+## Connect to OpenClaw
 
-ClawSwitch exposes a standard OpenAI-compatible API at `http://127.0.0.1:4000/v1`.
+ClawSwitch is designed to work with [OpenClaw](https://github.com/openclaw). In OpenClaw's provider settings, select **OpenAI-compatible** and enter:
+
+| Setting | Value |
+|---------|-------|
+| Base URL | `http://127.0.0.1:4000/v1` |
+| API Key | your `ROUTER_SHARED_KEY` from `.env` |
+| Model | `claw-auto-cheap` |
+
+Or run `make print-openclaw` to get a ready-to-paste JSON snippet:
+
+```json
+{
+  "provider": "openai",
+  "baseUrl": "http://127.0.0.1:4000/v1",
+  "apiKey": "your-router-shared-key",
+  "model": "claw-auto-cheap"
+}
+```
+
+That's it. Every request from OpenClaw now gets automatically routed to the cheapest model that can handle it. You can check the `x-routed-model` response header to see which model was actually used.
+
+## Other Clients
+
+ClawSwitch works with any OpenAI-compatible client — Cursor, Continue, aider, custom scripts, etc. Point it at `http://127.0.0.1:4000/v1` with model `claw-auto-cheap`.
 
 ```bash
 curl -s http://127.0.0.1:4000/v1/chat/completions \
@@ -86,13 +109,6 @@ curl -s http://127.0.0.1:4000/v1/chat/completions \
 ```
 
 If `ROUTER_SHARED_KEY` is set, add `-H "Authorization: Bearer $ROUTER_SHARED_KEY"`.
-
-Point any OpenAI-compatible client (OpenClaw, Cursor, etc.) at:
-- **Base URL**: `http://127.0.0.1:4000/v1`
-- **API key**: your `ROUTER_SHARED_KEY` (or any non-empty string if unset)
-- **Model**: `claw-auto-cheap` (or any alias from `router/models.yml`)
-
-Run `make print-openclaw` to see these values for your current setup.
 
 ## How Routing Works
 
