@@ -27,9 +27,11 @@ fi
 echo "[3/6] Installing Python dependencies ..."
 "$VENV/bin/pip" install --quiet --upgrade pip
 
-# any-llm-gateway with provider extras
+# any-llm gateway with provider extras.
+# Use a post-1.8.5 upstream commit that includes Gemini usage_metadata fixes.
+ANYLLM_SDK_REF="${ANYLLM_SDK_REF:-2008c49806abfb5e891ebf60c65cb6daec9120c8}"
 "$VENV/bin/pip" install --quiet \
-  'any-llm-sdk[gateway,openai,anthropic,mistral,gemini]'
+  "any-llm-sdk[gateway,openai,anthropic,mistral,gemini] @ https://github.com/mozilla-ai/any-llm/archive/${ANYLLM_SDK_REF}.tar.gz"
 
 # cost-router dependencies
 "$VENV/bin/pip" install --quiet -r "$ROOT/router/requirements.txt"

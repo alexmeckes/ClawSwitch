@@ -128,6 +128,8 @@ if [ "${has_provider_key}" -eq 0 ]; then
 fi
 
 echo "[4/8] Starting stack..."
+# Pull pinned images first so existing local caches do not keep stale any-llm.
+docker compose pull anyllm cost-router >/dev/null 2>&1 || true
 docker compose up -d --build
 
 echo "[5/8] Waiting for health checks..."

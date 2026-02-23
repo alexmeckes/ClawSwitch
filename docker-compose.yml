@@ -15,7 +15,7 @@ services:
     restart: unless-stopped
 
   anyllm:
-    image: ghcr.io/mozilla-ai/any-llm/gateway:latest
+    image: ${ANYLLM_GATEWAY_IMAGE:-ghcr.io/mozilla-ai/any-llm/gateway@sha256:64541d4b67b8edd8c1ba6ee3c3af61b0bbaf758c3dd97ade484a900a803caf2a}
     depends_on:
       postgres:
         condition: service_healthy

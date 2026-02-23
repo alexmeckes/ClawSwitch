@@ -37,6 +37,7 @@ OPENAI_API_KEY=your-key ./scripts/install.sh
 ```
 
 That's it. This creates config files, generates local keys, starts all services, runs a smoke test, and prints your connection settings. Pass `ANTHROPIC_API_KEY`, `MISTRAL_API_KEY`, or `GEMINI_API_KEY` instead (or in addition) for other providers.
+Docker gateway version is controlled by `ANYLLM_GATEWAY_IMAGE` in `.env`.
 
 To skip the smoke test:
 ```bash
@@ -68,7 +69,7 @@ sudo apt install postgresql && sudo systemctl start postgresql
 ```bash
 make install-local
 ```
-This creates a `.venv/`, installs `any-llm-sdk[gateway]` + router deps, sets up the `gateway` database, and copies config templates.
+This creates a `.venv/`, installs `any-llm-sdk[gateway,...]` from `ANYLLM_SDK_REF` (defaults to a known-good upstream ref) + router deps, sets up the `gateway` database, and copies config templates.
 
 Before starting services, set at least one provider key in `.env` and ensure `ANYLLM_MASTER_KEY` is set.
 
