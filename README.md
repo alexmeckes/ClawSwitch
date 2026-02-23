@@ -97,9 +97,15 @@ curl -s http://127.0.0.1:8000/v1/users \
 curl -s http://127.0.0.1:4000/health | jq
 ```
 
-## Connect to OpenClaw
+## OpenClaw Quick Connect (60 seconds)
 
-ClawSwitch is designed to work with [OpenClaw](https://github.com/openclaw). In OpenClaw's provider settings, select **OpenAI-compatible** and enter:
+ClawSwitch is designed to work with [OpenClaw](https://github.com/openclaw). If you just want to get connected fast:
+
+1. Run `OPENAI_API_KEY=... ./scripts/install.sh` (or use `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, etc.).
+2. Run `make print-openclaw`.
+3. Paste those values into OpenClaw's provider settings.
+
+In OpenClaw's provider settings, select **OpenAI-compatible** and enter:
 
 | Setting | Value |
 |---------|-------|
@@ -119,6 +125,8 @@ Or run `make print-openclaw` to get a ready-to-paste JSON snippet:
 ```
 
 That's it. Every request from OpenClaw now gets automatically routed to the cheapest model that can handle it. You can check the `x-routed-model` response header to see which model was actually used.
+
+Direct provider model ids are also supported. For Gemini, both `gemini:<model>` and `google:<model>` are accepted and normalized before forwarding to Any-LLM.
 
 ## Other Clients
 

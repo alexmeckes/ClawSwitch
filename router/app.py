@@ -88,6 +88,25 @@ SIMPLE_KEYWORDS = (
 )
 
 
+def _normalize_model_key(model_key: str) -> str:
+    """
+    Normalize model identifiers for better OpenClaw/Any-LLM compatibility.
+
+    - Accept optional `anyllm/` transport prefix used by some OpenClaw configs.
+    - Map `google:<model>` to Any-LLM's gateway provider id `gemini:<model>`.
+    """
+    value = (model_key or "").strip()
+    if not value:
+        return value
+    if value.lower().startswith("anyllm/"):
+        value = value.split("/", 1)[1].strip()
+    if ":" in value:
+        provider, model = value.split(":", 1)
+        if provider.strip().lower() == "google":
+            value = f"gemini:{model.strip()}"
+    return value
+
+
 def _load_env() -> None:
     global ANYLLM_BASE_URL
     global ANYLLM_KEY
@@ -161,11 +180,16 @@ def _normalize_candidates(raw_candidates: Any) -> list[dict[str, Any]]:
 
     for item in raw_candidates:
         if isinstance(item, str):
-            candidates.append({"model": item})
+            normalized_model = _normalize_model_key(item)
+            if normalized_model:
+                candidates.append({"model": normalized_model})
             continue
 
         if isinstance(item, dict) and isinstance(item.get("model"), str):
-            normalized = {"model": item["model"]}
+            normalized_model = _normalize_model_key(item["model"])
+            if not normalized_model:
+                continue
+            normalized = {"model": normalized_model}
             if "input_price_per_million" in item:
                 normalized["input_price_per_million"] = float(item["input_price_per_million"])
             if "output_price_per_million" in item:
@@ -547,11 +571,12 @@ def _resolve_alias_config(
     if alias_config is not None:
         return requested_model, alias_config, int(alias_config["default_output_tokens"])
 
-    if ":" in requested_model or "/" in requested_model:
+    normalized_requested_model = _normalize_model_key(requested_model)
+    if ":" in normalized_requested_model or "/" in normalized_requested_model:
         direct_config = {
             "description": "Direct provider:model route",
             "default_output_tokens": 700,
-            "candidates": [{"model": requested_model}],
+            "candidates": [{"model": normalized_requested_model}],
             "tiers": {},
             "default_tier": "MEDIUM",
             "fallback_tiers_on_failure": False,
