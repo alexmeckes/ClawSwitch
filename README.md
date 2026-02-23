@@ -151,6 +151,19 @@ If `ROUTER_SHARED_KEY` is set, add `-H "Authorization: Bearer $ROUTER_SHARED_KEY
 2. Sort that tier's candidates by estimated cost (input + output)
 3. Try cheapest first; on failure, fall back within the tier, then across tiers
 
+#### How complexity is estimated
+
+ClawSwitch uses lightweight heuristics before model selection:
+
+- **Input tokens:** estimated with `tiktoken` from request messages (plus message/tool overhead).
+- **Output budget:** estimated from `max_completion_tokens` / `max_tokens` (or alias defaults).
+- **Keyword signals:** simple/coding/architecture/reasoning patterns in request text.
+- **Structure signals:** tool usage and structured-output requests.
+
+These signals determine the tier (`SIMPLE`, `MEDIUM`, `COMPLEX`, `REASONING`), then candidates in that tier are sorted by estimated cost and tried cheapest-first.
+
+Token estimates are routing signals for model selection, not exact billing values.
+
 ### Flat routing
 
 Skip classification, just pick the cheapest candidate across all models.
